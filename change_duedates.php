@@ -149,13 +149,10 @@ foreach ( $readclasses as $readclass ) {
 			print($readclass->getClassId() . ";" . $readclass->getTitle() . ";". $readclass->getEndDate() . ";" . $new_duedate ."\n");
 		}
 		else {
-		//$readclass->setEndDate( $new_duedate );
-     		//$response = $api->updateClass( $readclass );
+			$readclass->setEndDate( $new_duedate );
+     			$response = $api->updateClass( $readclass );
 		}
-	}
-    // $readclass_title = $readclass->getTitle();
-    // $readclass_ced = $readclass->getEndDate();
-	
+	}	
 }
 
 ?>
