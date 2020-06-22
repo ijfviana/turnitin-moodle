@@ -14,7 +14,7 @@ use Integrations\PhpSdk\TiiAssignment;
 
 $usage = "\n\nCambia la fecha de expiración de las clases en turnitin asociadas a cursos moodle. Para cada curso en moodle, la fecha de finalización de su clase asociada se calculará de la siguiente manera:
  1) será la fecha de finalización más tardía de las actividades creadas 2) si hay actividades sin fecha de finalización, se les asigna una fecha de finalización de 4 meses a contar desde
- la fecha de ejecuciión del script 3) en ningún caso la fecha de finalización no podrá ser posterior a la indicada en el parámetro max_duedate..
+ la fecha de ejecuciión del script 3) en ningún caso la fecha de finalización podrá ser posterior a la indicada en el parámetro max_duedate..
  
 Usage:
     # php change_duedates.php [--max_duedate=<value>] [--test|-t] [--postfix=<value>]
@@ -85,8 +85,6 @@ $api = new TurnitinAPI($tiiaccountid, $tiiapiurl, $tiisecretkey,
 
 $class = new TiiClass();
 $class->setTitle( $title );
-//$class->setClassId(21651794);
-//$class->setDateFrom( '2012-09-01T09:30:00Z' );
 $response = $api->findClasses( $class );
 $findclass = $response->getClass();
 $classids = $findclass->getClassIds();
