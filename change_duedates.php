@@ -25,6 +25,10 @@ Options:
     --max_duedate=<value>   Fecha máxima de finalización, debe estar en formato d-m-Y H:i:s
     -t 			   Indica la fecha que pondría pero no la asigna.
     --postfix=<value>	   Cadena que debe contener los nombres de las clases a las que cambieremos la fecha. Valor por defecto (Moodle PP).
+    --account_number=<value> Número de cuenta de Turnitin. Si no se indica se toma de la configuración del m�ódulo
+    --shared_key=value     Clave compartida para acceder a la cuenta. Si no se indica se toma de la configuración del m�ódulo
+    --from_duedate          Busca clases cuya fecha de finalización sea la indicada o superior. Si no se indica nada se tomará la fecha actual.
+    --months                Meses desde la fecha actual en la que fijaremos la finalización de una clases y sus actividades ya han finalizado o no tienen fecha de finalización.
 
 Examples:
 
@@ -39,6 +43,11 @@ list($options, $unrecognised) = cli_get_params([
     'test' => false,
     'postfix' => '(Moodle PP)',
     'max_duedate' => null,
+    'account_number' => null,
+    'shared_key' => null,
+    'from_duedate' => null,
+    'months' => 4,
+
 ], [
     'h' => 'help',
     't' => 'test'
@@ -67,40 +76,73 @@ if (!empty($options['postfix'])) {
 	$title = $options['postfix'];
 }
 
-if ($options['test']) {
-	print("Class Id; Name Id; Current Due Date; New Due Date \n");
+if (!empty($options['from_duedate']))
+{
+        $today = strtotime($options['from_duedate']) ;
+}
+else{
+        $today = time();
 }
 
+$today = date("d-m-Y",$today);
+$today = strtotime($today);
 
 $config = plagiarism_plugin_turnitin::plagiarism_turnitin_admin_config();
 
-$tiiapiurl = (substr($config->plagiarism_turnitin_apiurl, -1) == '/') ? substr($config->plagiarism_turnitin_apiurl, 0, -1) : $config->plagiarism_turnitin_apiurl;
+if (!empty($options['account_number'])) {
+        $accountid = $options['account_number'];
+}else{
+        $accountid = $config->plagiarism_turnitin_accountid;
+}
+
+if (!empty($options['shared_key'])) {
+        $key = $options['shared_key'];
+}else{
+        $key = $config->plagiarism_turnitin_secretkey;
+}
+
+$tiiapiurl = (substr($config->plagiarism_turnitin_apiurl, -1) == '/') ? substr($config->plagiarism_turnitin_apiurl, 0, -1) : $config->plagi
+arism_turnitin_apiurl;
 $tiiintegrationid = 12;
-$tiiaccountid = $config->plagiarism_turnitin_accountid;
-$tiisecretkey = $config->plagiarism_turnitin_secretkey;
+$tiiaccountid = $accountid;
+$tiisecretkey = $key;
+
+print("Conectando a " . $tiiapiurl . " y numero de cuenta " . $tiiaccountid );
+print("\n\n");
 
 $api = new TurnitinAPI($tiiaccountid, $tiiapiurl, $tiisecretkey,
                                 $tiiintegrationid);
 
+if ($options['test']) {
+	print("Class Id; Name Id; Current Due Date; New Due Date \n");
+}
+
+$months_ago=$today + intval($options['months'])*30*24*60*60;
 
 $class = new TiiClass();
 $class->setTitle( $title );
+$class->setDateFrom( date("c",$today));
 $response = $api->findClasses( $class );
 $findclass = $response->getClass();
 $classids = $findclass->getClassIds();
 
+if (empty($classids)){
+        print("No se han encontrado clases en el rango de fechas indicado\n");
+        exit(2);
+}
+      
 $class2 = new TiiClass();
 $class2->setClassIds( $classids );
 
 $response = $api->readClasses( $class2 );
 $readclasses = $response->getClasses();
 
+$updated = 0;
 
 foreach ( $readclasses as $readclass ) {
 
 	// para las aulas aún activas
-	
-	if (date("U",strtotime($readclass->getEndDate())) >= time())
+	if (date("U",strtotime($readclass->getEndDate())) >= $today)
 	{
 		// la fecha de expiración será la de la tarea que acabe mas tarde
 		
@@ -112,45 +154,52 @@ foreach ( $readclasses as $readclass ) {
 	   	
 	   	$findassignmentids = $readassignments->getAssignmentIds();
 	   	
-	   	$duedates= array();
-	   	
 	   	foreach ( $findassignmentids as $a ) {
 
-			$assignment = new TiiAssignment();
-     		$assignment->setAssignmentId( $a );	   	     	
-	   	 	$response = $api->readAssignment( $assignment );
-	     	$readassignment = $response->getAssignment();
-	
-			if (!empty($readassignment->getDueDate()))
-				$duedates[] = date("U",strtotime($readassignment->getDueDate()));
-			else
-				$duedates[] = time() + 2592000;						
-		}
-		
-		// Si ninguna de las tareas tiene fecha de finalizacion, la fecha sera 4 meses desde que se creo la clase
-		
-		if (empty($duedates))
-		{
-		 	$duedates[] = time() + 90000;	
-		}  
-		
-		// la fecha de finalización debe ser siempre una fecha futura
+                        $assignment = new TiiAssignment();
+                $assignment->setAssignmentId( $a );
+                        $response = $api->readAssignment( $assignment );
+                $readassignment = $response->getAssignment();
 
-		$new_duedate = max(array(max($duedates),time() + 90000));
-		
-		if (!empty($max_duedate) && $new_duedate > $max_duedate)
-			$new_duedate = $max_duedate;
-				
-		$new_duedate = date ('c',$new_duedate);		
-		
-		if ($options['test']) {
-			print($readclass->getClassId() . ";" . $readclass->getTitle() . ";". $readclass->getEndDate() . ";" . $new_duedate ."\n");
-		}
-		else {
-			$readclass->setEndDate( $new_duedate );
-     			$response = $api->updateClass( $readclass );
-		}
+                        if (!empty($readassignment->getDueDate()))
+                                $duedates[] = date("U",strtotime($readassignment->getDueDate()));
+                        else
+                                $duedates[] = $months_ago;
+                }
+
+                // Si ninguna de las tareas tiene fecha de finalizacion, la fecha sera N meses desde que se ejecutó el script
+
+                if (empty($duedates))
+                {
+                        $duedates[] = $months_ago;
+                }
+
+                // la fecha de finalización de la clase será la mayor fecha entre las de finalizaci�n y la fecha actualás  N meses
+
+                $new_duedate = max(array(max($duedates),$months_ago));
+
+                // la fecha de finalización nunca será superior a la indicada
+                if (!empty($max_duedate) && $new_duedate > $max_duedate)
+                        $new_duedate = $max_duedate;
+
+                $new_duedate = date ('c',$new_duedate);
+
+                if ($options['test']) {
+                        print($readclass->getClassId() . ";" . $readclass->getTitle() . ";". $readclass->getEndDate() . ";" . $new_duedate
+."\n");
+                }
+                else {
+                        print("Cambiando fecha de " . $readclass->getTitle() . " (" . $readclass->getClassId() . ")" . " a " .  $new_duedat
+e . "... ");
+                        $readclass->setEndDate( $new_duedate );
+                        $response = $api->updateClass( $readclass );
+                        // print_r(get_class_methods($response));
+                        print_r($response->getDescription() );
+                        print("\n");
+                }
+                $updated = $updated + 1;
 	}	
 }
+        print("Se actualizaron " . $updated . " clases.\n");
 
 ?>
